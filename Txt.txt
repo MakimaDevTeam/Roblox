@@ -1,0 +1,1146 @@
+--[[
+    ╔══════════════════════════════════════════════╗
+    ║              MAKIMA SCRIPTS                 ║
+    ║                 by MakimaDev                 ║
+    ╚══════════════════════════════════════════════╝
+
+    Sistema:
+    - JNKIE Key
+    - LootLabs
+    - WindUI
+    - Key salva automaticamente
+    - Sem seletor de serviço
+    - Sem Patentes
+]]
+
+--==================================================
+-- CONFIGURAÇÕES
+--==================================================
+
+local WINDUI_URL =
+    "https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"
+
+local JNKIE_SERVICE = "Key"
+local JNKIE_IDENTIFIER = "1207333"
+local JNKIE_PROVIDER = "LootLabs"
+
+local GET_KEY_URL =
+    "https://jnkie.com/get-key/makimascripts"
+
+local ORIGINAL_SCRIPT =
+    "https://pastebin.com/raw/Ld2V1LSL"
+
+local TOM_SCRIPT =
+    "https://rawscripts.net/raw/Universal-Script-Auto-jjs-EB-do-delta-126144"
+
+local KEY_FOLDER = "MakimaScripts"
+local KEY_FILE = KEY_FOLDER .. "/key.txt"
+
+--==================================================
+-- SERVIÇOS
+--==================================================
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local StarterGui = game:GetService("StarterGui")
+
+local player = Players.LocalPlayer
+
+--==================================================
+-- FUNÇÕES DE ARQUIVO
+--==================================================
+
+local function canUseFileSystem()
+    return type(isfile) == "function"
+        and type(readfile) == "function"
+        and type(writefile) == "function"
+end
+
+local function ensureFolder()
+    if type(makefolder) ~= "function" then
+        return
+    end
+
+    if type(isfolder) == "function" then
+        if not isfolder(KEY_FOLDER) then
+            pcall(function()
+                makefolder(KEY_FOLDER)
+            end)
+        end
+    else
+        pcall(function()
+            makefolder(KEY_FOLDER)
+        end)
+    end
+end
+
+local function saveKey(key)
+    if not canUseFileSystem() then
+        return false
+    end
+
+    ensureFolder()
+
+    local ok = pcall(function()
+        writefile(KEY_FILE, key)
+    end)
+
+    return ok
+end
+
+local function getSavedKey()
+    if not canUseFileSystem() then
+        return nil
+    end
+
+    if type(isfile) ~= "function" then
+        return nil
+    end
+
+    local exists = false
+
+    pcall(function()
+        exists = isfile(KEY_FILE)
+    end)
+
+    if not exists then
+        return nil
+    end
+
+    local ok, content = pcall(function()
+        return readfile(KEY_FILE)
+    end)
+
+    if ok and content then
+        content = tostring(content):gsub("^%s+", ""):gsub("%s+$", "")
+
+        if content ~= "" then
+            return content
+        end
+    end
+
+    return nil
+end
+
+local function deleteSavedKey()
+    if type(delfile) ~= "function" then
+        return
+    end
+
+    pcall(function()
+        if isfile(KEY_FILE) then
+            delfile(KEY_FILE)
+        end
+    end)
+end
+
+--==================================================
+-- JNKIE
+--==================================================
+
+local Junkie
+
+do
+    local ok, result = pcall(function()
+        return loadstring(
+            game:HttpGet("https://jnkie.com/sdk/library.lua")
+        )()
+    end)
+
+    if not ok or not result then
+        warn("[Makima Scripts] Não foi possível carregar o JNKIE.")
+        return
+    end
+
+    Junkie = result
+end
+
+Junkie.service = JNKIE_SERVICE
+Junkie.identifier = JNKIE_IDENTIFIER
+Junkie.provider = JNKIE_PROVIDER
+
+local function validateKey(key)
+    if not key or key == "" then
+        return false
+    end
+
+    local ok, result = pcall(function()
+        return Junkie.check_key(key)
+    end)
+
+    if not ok or not result then
+        return false
+    end
+
+    return result.valid == true
+end
+
+--==================================================
+-- PEGAR KEY
+--==================================================
+
+local function openKeyPage()
+    -- Abre diretamente no navegador, se o executor suportar.
+    if type(openbrowser) == "function" then
+        pcall(function()
+            openbrowser(GET_KEY_URL)
+        end)
+    end
+
+    -- Também copia o link para facilitar.
+    if type(setclipboard) == "function" then
+        pcall(function()
+            setclipboard(GET_KEY_URL)
+        end)
+    end
+end
+
+local function kickForKey()
+    task.wait(0.25)
+
+    player:Kick(
+        "Você foi expulso do jogo.\n\nRetorne com sua Key para continuar."
+    )
+end
+
+--==================================================
+-- TELA DE KEY
+--==================================================
+
+local KeyGui
+local KeyBox
+local KeyStatus
+
+local function createKeyGui()
+
+    if player:WaitForChild("PlayerGui"):FindFirstChild("MakimaKeySystem") then
+        player.PlayerGui.MakimaKeySystem:Destroy()
+    end
+
+    KeyGui = Instance.new("ScreenGui")
+    KeyGui.Name = "MakimaKeySystem"
+    KeyGui.ResetOnSpawn = false
+    KeyGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    KeyGui.Parent = player.PlayerGui
+
+    local Main = Instance.new("Frame")
+    Main.Size = UDim2.new(0, 360, 0, 245)
+    Main.Position = UDim2.new(0.5, -180, 0.5, -122)
+    Main.BackgroundColor3 = Color3.fromRGB(18, 18, 23)
+    Main.BorderSizePixel = 0
+    Main.Parent = KeyGui
+
+    local Corner = Instance.new("UICorner")
+    Corner.CornerRadius = UDim.new(0, 12)
+    Corner.Parent = Main
+
+    local Stroke = Instance.new("UIStroke")
+    Stroke.Color = Color3.fromRGB(45, 45, 55)
+    Stroke.Thickness = 1
+    Stroke.Parent = Main
+
+    local Title = Instance.new("TextLabel")
+    Title.Size = UDim2.new(1, -30, 0, 42)
+    Title.Position = UDim2.new(0, 15, 0, 12)
+    Title.BackgroundTransparency = 1
+    Title.Text = "MAKIMA SCRIPTS"
+    Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Title.Font = Enum.Font.GothamBold
+    Title.TextSize = 23
+    Title.Parent = Main
+
+    local SubTitle = Instance.new("TextLabel")
+    SubTitle.Size = UDim2.new(1, -30, 0, 25)
+    SubTitle.Position = UDim2.new(0, 15, 0, 50)
+    SubTitle.BackgroundTransparency = 1
+    SubTitle.Text = "Digite sua Key para continuar"
+    SubTitle.TextColor3 = Color3.fromRGB(170, 170, 180)
+    SubTitle.Font = Enum.Font.Gotham
+    SubTitle.TextSize = 13
+    SubTitle.Parent = Main
+
+    KeyBox = Instance.new("TextBox")
+    KeyBox.Size = UDim2.new(1, -40, 0, 42)
+    KeyBox.Position = UDim2.new(0, 20, 0, 82)
+    KeyBox.BackgroundColor3 = Color3.fromRGB(30, 30, 38)
+    KeyBox.BorderSizePixel = 0
+    KeyBox.PlaceholderText = "Cole sua Key aqui..."
+    KeyBox.PlaceholderColor3 = Color3.fromRGB(120, 120, 130)
+    KeyBox.Text = ""
+    KeyBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+    KeyBox.Font = Enum.Font.Gotham
+    KeyBox.TextSize = 14
+    KeyBox.ClearTextOnFocus = false
+    KeyBox.Parent = Main
+
+    local KeyCorner = Instance.new("UICorner")
+    KeyCorner.CornerRadius = UDim.new(0, 8)
+    KeyCorner.Parent = KeyBox
+
+    local GetButton = Instance.new("TextButton")
+    GetButton.Size = UDim2.new(0.46, -5, 0, 42)
+    GetButton.Position = UDim2.new(0, 20, 0, 137)
+    GetButton.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+    GetButton.BorderSizePixel = 0
+    GetButton.Text = "PEGAR KEY"
+    GetButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    GetButton.Font = Enum.Font.GothamBold
+    GetButton.TextSize = 14
+    GetButton.Parent = Main
+
+    local GetCorner = Instance.new("UICorner")
+    GetCorner.CornerRadius = UDim.new(0, 8)
+    GetCorner.Parent = GetButton
+
+    local VerifyButton = Instance.new("TextButton")
+    VerifyButton.Size = UDim2.new(0.46, -5, 0, 42)
+    VerifyButton.Position = UDim2.new(0.54, -15, 0, 137)
+    VerifyButton.BackgroundColor3 = Color3.fromRGB(0, 130, 220)
+    VerifyButton.BorderSizePixel = 0
+    VerifyButton.Text = "VERIFICAR"
+    VerifyButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    VerifyButton.Font = Enum.Font.GothamBold
+    VerifyButton.TextSize = 14
+    VerifyButton.Parent = Main
+
+    local VerifyCorner = Instance.new("UICorner")
+    VerifyCorner.CornerRadius = UDim.new(0, 8)
+    VerifyCorner.Parent = VerifyButton
+
+    KeyStatus = Instance.new("TextLabel")
+    KeyStatus.Size = UDim2.new(1, -40, 0, 35)
+    KeyStatus.Position = UDim2.new(0, 20, 0, 190)
+    KeyStatus.BackgroundTransparency = 1
+    KeyStatus.Text = ""
+    KeyStatus.TextColor3 = Color3.fromRGB(180, 180, 190)
+    KeyStatus.Font = Enum.Font.Gotham
+    KeyStatus.TextSize = 12
+    KeyStatus.Parent = Main
+
+    GetButton.MouseButton1Click:Connect(function()
+        KeyStatus.Text = "Abrindo página da Key..."
+        KeyStatus.TextColor3 = Color3.fromRGB(180, 180, 190)
+
+        openKeyPage()
+
+        task.wait(0.15)
+
+        kickForKey()
+    end)
+
+    VerifyButton.MouseButton1Click:Connect(function()
+
+        local key = tostring(KeyBox.Text or "")
+            :gsub("^%s+", "")
+            :gsub("%s+$", "")
+
+        if key == "" then
+            KeyStatus.Text = "Digite uma Key."
+            KeyStatus.TextColor3 = Color3.fromRGB(255, 100, 100)
+            return
+        end
+
+        VerifyButton.Text = "VERIFICANDO..."
+        VerifyButton.Active = false
+
+        local valid = validateKey(key)
+
+        if valid then
+
+            saveKey(key)
+
+            KeyStatus.Text = "Key válida!"
+            KeyStatus.TextColor3 = Color3.fromRGB(80, 220, 120)
+
+            task.wait(0.5)
+
+            KeyGui:Destroy()
+
+            VerifyButton.Active = true
+            VerifyButton.Text = "VERIFICAR"
+
+            -- Inicia o Hub
+            task.spawn(function()
+                loadMainHub()
+            end)
+
+        else
+
+            KeyBox.Text = ""
+
+            KeyStatus.Text = "Key inválida ou expirada."
+            KeyStatus.TextColor3 = Color3.fromRGB(255, 90, 90)
+
+            VerifyButton.Active = true
+            VerifyButton.Text = "VERIFICAR"
+        end
+    end)
+end
+
+--==================================================
+-- WINDUI
+--==================================================
+
+function loadMainHub()
+
+    local WindUI
+
+    local ok, result = pcall(function()
+        return loadstring(game:HttpGet(WINDUI_URL))()
+    end)
+
+    if not ok or not result then
+        warn("[Makima Scripts] Erro ao carregar WindUI.")
+        return
+    end
+
+    WindUI = result
+
+    --==================================================
+    -- JANELA
+    --==================================================
+
+    local Window = WindUI:CreateWindow({
+        Title = "Makima Scripts",
+        Icon = "rbxassetid://84861533911481",
+        Author = "MakimaDev",
+        Folder = "MakimaScripts",
+        Size = UDim2.fromOffset(580, 430),
+        Transparent = false,
+        Resizable = true,
+        SideBarWidth = 180,
+    })
+
+    --==================================================
+    -- PERGUNTAS
+    --==================================================
+
+    local PerguntasTab = Window:Tab({
+        Title = "Perguntas",
+        Icon = "book-open",
+    })
+
+    PerguntasTab:Section({
+        Title = "Siglas do Exército",
+    })
+
+    local siglas = {
+        {"AMAN", "Academia de Agulhas Negras"},
+        {"E.P.C", "Escola Preparatória de Coronéis"},
+        {"APG", "Academia Preparatória de Generais"},
+        {"BIP", "Batalhão de Infantaria Paraquedistas"},
+        {"BPE", "Batalhão da Polícia do Exército"},
+        {"BFE", "Batalhão de Forças Especiais"},
+        {"BAC", "Batalhão de Ações de Comandos"},
+        {"CIE", "Centro de Inteligência do Exército"},
+        {"CIGS", "Centro de Instrução de Guerras na Selva"},
+        {"CYBER", "Comando de Defesa Cibernética"},
+        {"BI-CAAT", "Batalhão de Infantaria da Caatinga"},
+        {"REC-MEC", "Regimento da Cavalaria Mecânica"},
+    }
+
+    for _, data in ipairs(siglas) do
+        PerguntasTab:Button({
+            Title = data[1],
+            Desc = data[2],
+            Callback = function()
+                if type(setclipboard) == "function" then
+                    pcall(function()
+                        setclipboard(data[1] .. ": " .. data[2])
+                    end)
+                end
+            end,
+        })
+    end
+
+    --==================================================
+    -- PARKOUR
+    --==================================================
+
+    local ParkourTab = Window:Tab({
+        Title = "Parkour",
+        Icon = "footprints",
+    })
+
+    ParkourTab:Section({
+        Title = "Parkour Auxiliar",
+    })
+
+    local parkourEnabled = false
+    local Hitboxes = {}
+
+    -- Busca a tabela ORIGINAL de hitboxes do script antigo.
+    local function getOriginalHitboxData()
+
+        local ok, source = pcall(function()
+            return game:HttpGet(ORIGINAL_SCRIPT)
+        end)
+
+        if not ok or not source then
+            warn("[Makima Scripts] Não foi possível buscar o Parkour original.")
+            return nil
+        end
+
+        local tableText = source:match(
+            "local hitboxData%s*=%s*(%b{})"
+        )
+
+        if not tableText then
+            warn("[Makima Scripts] hitboxData não encontrada.")
+            return nil
+        end
+
+        local loadOk, data = pcall(function()
+            return loadstring("return " .. tableText)()
+        end)
+
+        if loadOk and type(data) == "table" then
+            return data
+        end
+
+        return nil
+    end
+
+    local function CreateHitboxes()
+
+        if #Hitboxes > 0 then
+            return
+        end
+
+        local hitboxData = getOriginalHitboxData()
+
+        if not hitboxData then
+            return
+        end
+
+        for _, v in ipairs(hitboxData) do
+
+            local p = Instance.new("Part")
+
+            p.Name = "MakimaScripts_Hitbox"
+            p.Size = v.size
+            p.Position = v.pos
+            p.Anchored = true
+            p.Transparency = 1
+            p.CanCollide = false
+            p.Parent = workspace
+
+            local box = Instance.new("SelectionBox")
+
+            box.Adornee = p
+            box.Color3 = Color3.fromRGB(0, 100, 255)
+            box.SurfaceColor3 = Color3.fromRGB(0, 150, 255)
+            box.SurfaceTransparency = 0.5
+            box.LineThickness = 0.08
+            box.Parent = p
+
+            table.insert(Hitboxes, p)
+        end
+    end
+
+    local function ClearHitboxes()
+
+        for _, v in pairs(Hitboxes) do
+            pcall(function()
+                v:Destroy()
+            end)
+        end
+
+        table.clear(Hitboxes)
+    end
+
+    ParkourTab:Toggle({
+        Title = "Parkour Auxiliar",
+        Desc = "Ativa os hitboxes do Parkour original.",
+        Value = false,
+
+        Callback = function(value)
+
+            parkourEnabled = value
+
+            if parkourEnabled then
+                CreateHitboxes()
+            else
+                ClearHitboxes()
+            end
+        end,
+    })
+
+    RunService.Heartbeat:Connect(function()
+
+        if not parkourEnabled then
+            return
+        end
+
+        local char = player.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+
+        if not hrp then
+            return
+        end
+
+        local velY = hrp.AssemblyLinearVelocity.Y
+
+        for _, part in pairs(Hitboxes) do
+
+            if part and part.Parent then
+
+                part.CanCollide =
+                    (
+                        velY <= 0.5
+                        and hrp.Position.Y >
+                        (part.Position.Y + part.Size.Y / 2 - 1)
+                    )
+
+            end
+        end
+    end)
+
+    --==================================================
+    -- JJS
+    --==================================================
+
+    local JJsTab = Window:Tab({
+        Title = "JJs",
+        Icon = "zap",
+    })
+
+    JJsTab:Section({
+        Title = "Auto JJS",
+    })
+
+    local tomCarregado = false
+
+    JJsTab:Button({
+        Title = "AUTO JJS",
+        Desc = "Executa o script de Auto JJS.",
+        Callback = function()
+
+            if tomCarregado then
+
+                pcall(function()
+                    StarterGui:SetCore("SendNotification", {
+                        Title = "Auto JJS",
+                        Text = "Já está ativo!",
+                        Duration = 3,
+                    })
+                end)
+
+                return
+            end
+
+            tomCarregado = true
+
+            pcall(function()
+                loadstring(
+                    game:HttpGet(TOM_SCRIPT)
+                )()
+            end)
+        end,
+    })
+
+    --==================================================
+    -- FARM
+    --==================================================
+
+    local FarmTab = Window:Tab({
+        Title = "Farm",
+        Icon = "tractor",
+    })
+
+    FarmTab:Section({
+        Title = "Farms Automáticos",
+    })
+
+    local Lixos = {
+        Vector3.new(470.87, 3.04, -885.88),
+        Vector3.new(377.87, 3.04, -940.65),
+        Vector3.new(225.02, 3.04, -974.52),
+        Vector3.new(102.27, 3.04, -889.48),
+        Vector3.new(-160.73, 3.04, -803.28),
+        Vector3.new(-389.38, 3.04, -1075.70),
+        Vector3.new(-421.97, 3.04, -970.06),
+    }
+
+    local Lixeira =
+        Vector3.new(-394.31, 3.04, -779.87)
+
+    local Foice =
+        Vector3.new(-351.95, 3.12, -631.06)
+
+    local Gramas = {
+        Vector3.new(82.63, 3.00, -671.36),
+        Vector3.new(-45.00, 3.00, -671.39),
+        Vector3.new(-15.39, 3.00, -619.51),
+        Vector3.new(218.96, 3.00, -758.32),
+        Vector3.new(112.01, 3.00, -652.70),
+        Vector3.new(123.73, 3.00, -741.72),
+        Vector3.new(51.76, 3.00, -1001.02),
+        Vector3.new(173.18, 3.00, -987.78),
+        Vector3.new(175.72, 3.00, -931.94),
+        Vector3.new(120.00, 3.00, -848.69),
+        Vector3.new(54.60, 3.00, -780.14),
+        Vector3.new(10.21, 3.00, -744.73),
+    }
+
+    local CaixaPega =
+        Vector3.new(77.48, 3.04, -429.99)
+
+    local CaixaEntrega =
+        Vector3.new(440.87, 3.85, -224.70)
+
+    local autoLixo = false
+    local autoGrama = false
+    local autoCaixa = false
+
+    local function teleportTo(pos)
+
+        local char = player.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+
+        if hrp then
+            hrp.CFrame =
+                CFrame.new(pos + Vector3.new(0, 3, 0))
+        end
+    end
+
+    local function activateNearPrompts()
+
+        local char = player.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+
+        if not hrp then
+            return
+        end
+
+        for _ = 1, 3 do
+
+            for _, obj in pairs(workspace:GetDescendants()) do
+
+                if obj:IsA("ProximityPrompt")
+                    and obj.Enabled then
+
+                    local parent = obj.Parent
+
+                    if parent and parent:IsA("BasePart") then
+
+                        if (parent.Position - hrp.Position).Magnitude < 15 then
+
+                            pcall(function()
+                                fireproximityprompt(obj)
+                            end)
+
+                        end
+                    end
+                end
+            end
+
+            task.wait(0.25)
+        end
+    end
+
+    local function startAutoLixo()
+
+        task.spawn(function()
+
+            while autoLixo do
+
+                for i = 1, #Lixos do
+
+                    if not autoLixo then
+                        break
+                    end
+
+                    teleportTo(Lixos[i])
+
+                    task.wait(1)
+
+                    activateNearPrompts()
+
+                    task.wait(1.2)
+
+                    teleportTo(Lixeira)
+
+                    task.wait(1)
+
+                    activateNearPrompts()
+
+                    task.wait(1.2)
+                end
+            end
+        end)
+    end
+
+    local function startAutoGrama()
+
+        task.spawn(function()
+
+            teleportTo(Foice)
+
+            task.wait(1.2)
+
+            activateNearPrompts()
+
+            task.wait(1.5)
+
+            while autoGrama do
+
+                for i = 1, #Gramas do
+
+                    if not autoGrama then
+                        break
+                    end
+
+                    teleportTo(Gramas[i])
+
+                    task.wait(1)
+
+                    activateNearPrompts()
+
+                    task.wait(1.2)
+                end
+         end
+        end)
+    end
+
+    local function startAutoCaixa()
+
+        task.spawn(function()
+
+            while autoCaixa do
+
+                teleportTo(CaixaPega)
+
+                task.wait(1)
+
+                activateNearPrompts()
+
+                task.wait(1.2)
+
+                teleportTo(CaixaEntrega)
+
+                task.wait(1)
+
+                activateNearPrompts()
+
+                task.wait(1.2)
+
+                task.wait(30)
+            end
+        end)
+    end
+
+    FarmTab:Toggle({
+        Title = "AUTO LIXO",
+        Desc = "Coleta e entrega o lixo automaticamente.",
+        Value = false,
+
+        Callback = function(value)
+
+            autoLixo = value
+
+            if autoLixo then
+                startAutoLixo()
+            end
+        end,
+    })
+
+    FarmTab:Toggle({
+        Title = "AUTO GRAMA",
+        Desc = "Pega a foice e realiza o farm de grama.",
+        Value = false,
+
+        Callback = function(value)
+
+            autoGrama = value
+
+            if autoGrama then
+                startAutoGrama()
+            end
+        end,
+    })
+
+    FarmTab:Toggle({
+        Title = "AUTO CAIXA",
+        Desc = "Pega e entrega as caixas automaticamente.",
+        Value = false,
+
+        Callback = function(value)
+
+            autoCaixa = value
+
+            if autoCaixa then
+                startAutoCaixa()
+            end
+        end,
+    })
+
+    --==================================================
+    -- VOLVERS
+    --==================================================
+
+    local VolversTab = Window:Tab({
+        Title = "VOLVERS",
+        Icon = "rotate-ccw",
+    })
+
+    VolversTab:Section({
+        Title = "Rotação",
+    })
+
+    local rotacaoSalva = nil
+
+    local function salvarRotacao()
+
+        local char = player.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+
+        if hrp then
+            rotacaoSalva = hrp.CFrame.LookVector
+        end
+    end
+
+    local function virarPersonagem(graus)
+
+        local char = player.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+
+        if hrp then
+            hrp.CFrame =
+                hrp.CFrame * CFrame.Angles(
+                    0,
+                    math.rad(graus),
+                    0
+                )
+        end
+    end
+
+    VolversTab:Button({
+        Title = "Retaguarda",
+        Desc = "Vira o personagem 180°.",
+        Callback = function()
+
+            if not rotacaoSalva then
+                salvarRotacao()
+            end
+
+            virarPersonagem(180)
+        end,
+    })
+
+    VolversTab:Button({
+        Title = "Voltaguarda",
+        Desc = "Retorna à direção salva.",
+        Callback = function()
+
+            local char = player.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+
+            if hrp and rotacaoSalva then
+
+                local posicaoAtual = hrp.Position
+
+                hrp.CFrame =
+                    CFrame.new(
+                        posicaoAtual,
+                        posicaoAtual + rotacaoSalva
+                    )
+            end
+        end,
+    })
+
+    VolversTab:Button({
+        Title = "Direita",
+        Desc = "Vira 90° para a direita.",
+        Callback = function()
+            virarPersonagem(-90)
+        end,
+    })
+
+    VolversTab:Button({
+        Title = "Esquerda",
+        Desc = "Vira 90° para a esquerda.",
+        Callback = function()
+            virarPersonagem(90)
+        end,
+    })
+
+    if player.Character then
+        salvarRotacao()
+    end
+
+    player.CharacterAdded:Connect(function()
+        task.wait(1)
+        salvarRotacao()
+    end)
+
+    --==================================================
+    -- OUTROS
+    --==================================================
+
+    local OutrosTab = Window:Tab({
+        Title = "Outros",
+        Icon = "settings",
+    })
+
+    OutrosTab:Section({
+        Title = "Utilidades",
+    })
+
+    OutrosTab:Button({
+        Title = "LIBERAR CHAT",
+        Desc = "Tenta reativar o Chat do jogo.",
+        Callback = function()
+
+            pcall(function()
+                StarterGui:SetCoreGuiEnabled(
+                    Enum.CoreGuiType.Chat,
+                    true
+                )
+            end)
+
+            pcall(function()
+                StarterGui:SetCore(
+                    "ChatActive",
+                    true
+                )
+            end)
+
+            pcall(function()
+
+                local TextChatService =
+                    game:GetService("TextChatService")
+
+                if TextChatService then
+
+                    TextChatService
+                        .ChatWindowConfiguration
+                        .Enabled = true
+
+                    TextChatService
+                        .ChatInputBarConfiguration
+                        .Enabled = true
+                end
+            end)
+
+            pcall(function()
+                StarterGui:SetCore(
+                    "SendNotification",
+                    {
+                        Title = "Makima Scripts",
+                        Text = "Chat liberado!",
+                        Duration = 3,
+                    }
+                )
+            end)
+        end,
+    })
+
+    --==================================================
+    -- CRÉDITOS
+    --==================================================
+
+    local CreditosTab = Window:Tab({
+        Title = "Créditos",
+        Icon = "heart",
+    })
+
+    CreditosTab:Section({
+        Title = "Makima Scripts",
+    })
+
+    CreditosTab:Paragraph({
+        Title = "Makima Scripts",
+        Desc = "Hub criado por MakimaDev.",
+    })
+
+    CreditosTab:Button({
+        Title = "Discord",
+        Desc = "Copiar convite do Discord.",
+        Callback = function()
+
+            if type(setclipboard) == "function" then
+
+                pcall(function()
+                    setclipboard(
+                        "https://discord.gg/4aEBbw7BQf"
+                    )
+                end)
+
+            end
+        end,
+    })
+
+    CreditosTab:Button({
+        Title = "Link da Key",
+        Desc = "Copiar o link direto para pegar a Key.",
+        Callback = function()
+
+            if type(setclipboard) == "function" then
+
+                pcall(function()
+                    setclipboard(GET_KEY_URL)
+                end)
+
+            end
+        end,
+    })
+
+    CreditosTab:Paragraph({
+        Title = "Criador",
+        Desc = "MakimaDev",
+    })
+
+    CreditosTab:Paragraph({
+        Title = "Sistema de Key",
+        Desc = "JNKIE + LootLabs",
+    })
+
+    --==================================================
+    -- NOTIFICAÇÃO
+    --==================================================
+
+    pcall(function()
+
+        StarterGui:SetCore(
+            "SendNotification",
+            {
+                Title = "Makima Scripts",
+                Text = "Hub carregado com sucesso!",
+                Duration = 4,
+            }
+        )
+
+    end)
+
+end
+
+--==================================================
+-- INICIALIZAÇÃO
+--==================================================
+
+local savedKey = getSavedKey()
+
+if savedKey then
+
+    local valid = validateKey(savedKey)
+
+    if valid then
+
+        -- Key salva e ainda válida
+        loadMainHub()
+
+    else
+
+        -- Key expirou
+        deleteSavedKey()
+
+        createKeyGui()
+    end
+
+else
+
+    -- Primeiro acesso
+    createKeyGui()
+
+end
