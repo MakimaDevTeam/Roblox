@@ -1,0 +1,2144 @@
+--========================================================--
+--                    MAKIMA SCRIPTS                     --
+--                      MakimaDev                         --
+--========================================================--
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local StarterGui = game:GetService("StarterGui")
+local TextChatService = game:GetService("TextChatService")
+local HttpService = game:GetService("HttpService")
+local PathfindingService = game:GetService("PathfindingService")
+
+local LocalPlayer = Players.LocalPlayer
+
+--========================================================--
+-- CONFIGURAÇÕES
+--========================================================--
+
+local WINDUI_URL =
+    "https://github.com/Footagesus/WindUI/releases/download/1.6.66/main.lua"
+
+local DISCORD_URL =
+    "https://discord.gg/4aEBbw7BQf"
+
+local PARKOUR_URL =
+    "https://pastebin.com/raw/Ld2V1LSL"
+
+--========================================================--
+-- FUNÇÃO HTTP SEGURA
+--========================================================--
+
+local function SafeHttpGet(url)
+
+    local success, result = pcall(function()
+        return game:HttpGet(url)
+    end)
+
+    if not success then
+
+        warn("[Makima Scripts] HTTP ERROR:")
+        warn(url)
+        warn(result)
+
+        return nil
+    end
+
+    if type(result) ~= "string" or result == "" then
+
+        warn("[Makima Scripts] Resposta HTTP vazia:")
+        warn(url)
+
+        return nil
+    end
+
+    return result
+end
+
+--========================================================--
+-- CARREGAR WINDUI
+--========================================================--
+
+local WindUISource = SafeHttpGet(WINDUI_URL)
+
+if not WindUISource then
+    warn("[Makima Scripts] Não foi possível carregar o WindUI.")
+    return
+end
+
+local WindUI
+
+do
+
+    local success, result = pcall(function()
+
+        local fn = loadstring(WindUISource)
+
+        if not fn then
+            error("WindUI retornou código inválido.")
+        end
+
+        return fn()
+
+    end)
+
+    if not success then
+
+        warn("[Makima Scripts] Erro ao iniciar WindUI:")
+        warn(result)
+
+        return
+    end
+
+    WindUI = result
+end
+
+if not WindUI then
+    warn("[Makima Scripts] WindUI não carregou.")
+    return
+end
+
+--========================================================--
+-- PANDA AUTH - PUSL V4
+--========================================================--
+-- O Panda Auth controla a Key e o link de obtenção.
+-- Não há Kick() quando a Key é inválida/expirada.
+
+local PANDA_SERVICE_ID = "mskey"
+local PANDA_LIB_URL = "https://secure.pandauth.com/pv4/lib"
+
+local PUSL
+do
+    local success, result = pcall(function()
+        local source = game:HttpGet(PANDA_LIB_URL)
+        local loader = loadstring(source)
+        if type(loader) ~= "function" then
+            error("Panda Auth retornou código inválido.")
+        end
+        return loader()
+    end)
+
+    if not success or type(result) ~= "table" then
+        warn("[Makima Scripts] Falha ao carregar Panda Auth:", result)
+        return
+    end
+
+    PUSL = result
+end
+
+if type(PUSL.configure) ~= "function" or type(PUSL.validate) ~= "function" then
+    warn("[Makima Scripts] Panda Auth incompatível: configure()/validate() não encontrados.")
+    return
+end
+
+local pandaConfigured = pcall(function()
+    PUSL.configure({
+        serviceId = PANDA_SERVICE_ID,
+    })
+end)
+
+if not pandaConfigured then
+    warn("[Makima Scripts] Não foi possível configurar o serviço Panda Auth.")
+    return
+end
+
+local function GetPandaKeyLink()
+    if type(PUSL.getKeyUrl) ~= "function" then
+        return nil
+    end
+
+    local success, link = pcall(function()
+        return PUSL.getKeyUrl()
+    end)
+
+    if success and type(link) == "string" and link ~= "" then
+        return link
+    end
+
+    return nil
+end
+
+local function ValidateKey(key)
+    if type(key) ~= "string" then
+        return false
+    end
+
+    key = key:gsub("^%s+", ""):gsub("%s+$", "")
+    if key == "" then
+        return false
+    end
+
+    local success, result = pcall(function()
+        return PUSL.validate(key)
+    end)
+
+    if not success or type(result) ~= "table" then
+        warn("[Makima Scripts] Erro ao validar Key no Panda Auth:", result)
+        return false
+    end
+
+    if result.success == true then
+        pcall(function()
+            getgenv().SCRIPT_KEY = key
+        end)
+        return true
+    end
+
+    warn("[Makima Scripts] Key recusada pelo Panda Auth:", tostring(result.message or result.error or "INVALID"))
+    return false
+end
+
+local PANDA_KEY_URL = GetPandaKeyLink()
+
+--========================================================--
+-- TEMA
+--========================================================--
+
+pcall(function()
+
+    WindUI:AddTheme({
+
+        Name = "MakimaRed",
+
+        Accent = Color3.fromRGB(
+            190,
+            20,
+            45
+        ),
+
+        Background = Color3.fromRGB(
+            12,
+            9,
+            10
+        ),
+
+        Outline = Color3.fromRGB(
+            90,
+            25,
+            35
+        ),
+
+        Text = Color3.fromRGB(
+            245,
+            245,
+            245
+        ),
+
+        Placeholder = Color3.fromRGB(
+            130,
+            125,
+            128
+        ),
+
+        Button = Color3.fromRGB(
+            55,
+            22,
+            28
+        ),
+
+        Icon = Color3.fromRGB(
+            255,
+            80,
+            100
+        ),
+    })
+
+end)
+
+pcall(function()
+    WindUI:SetTheme("MakimaRed")
+end)
+
+--========================================================--
+-- WINDOW + KEYSYSTEM NATIVO
+--========================================================--
+
+local Window = WindUI:CreateWindow({
+
+    Title = "Makima Scripts",
+
+    Author = "by MakimaDev",
+
+    Icon = "flame",
+
+    Folder = "MakimaScriptsAuthV2",
+
+    Size = UDim2.fromOffset(
+        580,
+        460
+    ),
+
+    Transparent = false,
+
+    Theme = "MakimaRed",
+
+    Resizable = true,
+
+    SideBarWidth = 180,
+
+    --====================================================--
+    -- KEY SYSTEM DO PRÓPRIO WINDUI
+    --====================================================--
+
+    KeySystem = {
+
+        Title = "Makima Scripts",
+
+        Note = "Insira sua Key para continuar.",
+
+        URL = PANDA_KEY_URL or "",
+
+        SaveKey = true,
+
+        KeyValidator = function(key)
+
+            return ValidateKey(key)
+
+        end,
+    },
+})
+
+--========================================================--
+-- NOTIFICAÇÃO
+--========================================================--
+
+local function Notify(title, content, duration)
+
+    pcall(function()
+
+        WindUI:Notify({
+
+            Title = title,
+
+            Content = content,
+
+            Duration = duration or 3,
+
+        })
+
+    end)
+
+end
+
+--========================================================--
+-- CLIPBOARD
+--========================================================--
+
+local function Copy(text)
+
+    if type(setclipboard) ~= "function" then
+
+        Notify(
+            "Clipboard",
+            "Seu executor não suporta copiar para a área de transferência.",
+            4
+        )
+
+        return
+    end
+
+    local success = pcall(function()
+        setclipboard(text)
+    end)
+
+    if success then
+
+        Notify(
+            "Copiado",
+            "Link copiado para a área de transferência.",
+            2
+        )
+
+    end
+end
+
+--========================================================--
+-- TABS
+--========================================================--
+
+local PerguntasTab = Window:Tab({
+    Title = "Perguntas",
+    Icon = "help-circle",
+})
+
+local ParkourTab = Window:Tab({
+    Title = "Parkour",
+    Icon = "footprints",
+})
+
+local JJsTab = Window:Tab({
+    Title = "JJs",
+    Icon = "zap",
+})
+
+local FarmTab = Window:Tab({
+    Title = "Farm",
+    Icon = "tractor",
+})
+
+local PatchTab = Window:Tab({
+    Title = "Patch",
+    Icon = "clipboard-list",
+})
+
+local OutrosTab = Window:Tab({
+    Title = "Outros",
+    Icon = "settings",
+})
+
+local CreditosTab = Window:Tab({
+    Title = "Créditos",
+    Icon = "heart",
+})
+
+--========================================================--
+-- PERGUNTAS
+--========================================================--
+
+PerguntasTab:Paragraph({
+
+    Title = "Siglas",
+
+    Desc = "Consulte o significado das siglas.",
+
+    Color = "Red",
+})
+
+local Siglas = {
+
+    {
+        "AMAN",
+        "Academia de Agulhas Negras"
+    },
+
+    {
+        "E.P.C",
+        "Escola Preparatória de Coronéis"
+    },
+
+    {
+        "APG",
+        "Academia Preparatória de Generais"
+    },
+
+    {
+        "BIP",
+        "Batalhão de Infantaria Paraquedistas"
+    },
+
+    {
+        "BPE",
+        "Batalhão da Polícia do Exército"
+    },
+
+    {
+        "BFE",
+        "Batalhão de Forças Especiais"
+    },
+
+    {
+        "BAC",
+        "Batalhão de Ações de Comandos"
+    },
+
+    {
+        "CIE",
+        "Centro de Inteligência do Exército"
+    },
+
+    {
+        "CIGS",
+        "Centro de Instrução de Guerras na Selva"
+    },
+
+    {
+        "CYBER",
+        "Comando de Defesa Cibernética"
+    },
+
+    {
+        "BI-CAAT",
+        "Batalhão de Infantaria da Caatinga"
+    },
+
+    {
+        "REC-MEC",
+        "Regimento da Cavalaria Mecânica"
+    },
+}
+
+for _, info in ipairs(Siglas) do
+
+    PerguntasTab:Button({
+
+        Title = info[1],
+
+        Desc = info[2],
+
+        Callback = function()
+
+            Copy(
+                info[1]
+                .. ": "
+                .. info[2]
+            )
+
+        end,
+    })
+
+end
+
+--========================================================--
+-- PARKOUR
+--========================================================--
+
+local ParkourEnabled = false
+local Hitboxes = {}
+
+local function ClearHitboxes()
+
+    for _, object in ipairs(Hitboxes) do
+
+        pcall(function()
+            object:Destroy()
+        end)
+
+    end
+
+    table.clear(Hitboxes)
+end
+
+local function GetHitboxData()
+
+    local source = SafeHttpGet(PARKOUR_URL)
+
+    if not source then
+        return nil
+    end
+
+    local tableText =
+        source:match(
+            "local hitboxData%s*=%s*(%b{})"
+        )
+
+    if not tableText then
+
+        warn(
+            "[Makima Scripts] hitboxData não encontrada."
+        )
+
+        return nil
+    end
+
+    local success, data = pcall(function()
+
+        local fn = loadstring(
+            "return " .. tableText
+        )
+
+        if not fn then
+            error("Não foi possível interpretar hitboxData.")
+        end
+
+        return fn()
+
+    end)
+
+    if success and type(data) == "table" then
+        return data
+    end
+
+    return nil
+end
+
+local function CreateHitboxes()
+
+    ClearHitboxes()
+
+    local hitboxData = GetHitboxData()
+
+    if not hitboxData then
+
+        Notify(
+            "Parkour",
+            "Não foi possível carregar os pontos do Parkour.",
+            5
+        )
+
+        return false
+    end
+
+    for _, data in ipairs(hitboxData) do
+
+        if data.pos and data.size then
+
+            local part = Instance.new("Part")
+
+            part.Name = "MakimaParkourHitbox"
+
+            part.Size = data.size
+
+            part.Position = data.pos
+
+            part.Anchored = true
+
+            part.Transparency = 1
+
+            part.CanCollide = false
+
+            part.Parent = workspace
+
+            local selection =
+                Instance.new("SelectionBox")
+
+            selection.Adornee = part
+
+            selection.Color3 =
+                Color3.fromRGB(
+                    190,
+                    20,
+                    45
+                )
+
+            selection.SurfaceTransparency = 0.5
+
+            selection.LineThickness = 0.05
+
+            selection.Parent = part
+
+            table.insert(
+                Hitboxes,
+                part
+            )
+
+        end
+
+    end
+
+    return true
+end
+
+ParkourTab:Paragraph({
+
+    Title = "Parkour Auxiliar",
+
+    Desc =
+        "Auxilia nos obstáculos do Parkour.",
+
+    Color = "Red",
+})
+
+ParkourTab:Toggle({
+
+    Title = "Parkour Auxiliar",
+
+    Desc =
+        "Ativa ou desativa os auxiliares.",
+
+    Value = false,
+
+    Callback = function(state)
+
+        ParkourEnabled = state
+
+        if state then
+
+            if CreateHitboxes() then
+
+                Notify(
+                    "Parkour",
+                    "Ativado.",
+                    2
+                )
+
+            else
+
+                ParkourEnabled = false
+
+            end
+
+        else
+
+            ClearHitboxes()
+
+            Notify(
+                "Parkour",
+                "Desativado.",
+                2
+            )
+
+        end
+
+    end,
+})
+
+RunService.Heartbeat:Connect(function()
+
+    if not ParkourEnabled then
+        return
+    end
+
+    local character =
+        LocalPlayer.Character
+
+    local root =
+        character
+        and character:FindFirstChild(
+            "HumanoidRootPart"
+        )
+
+    if not root then
+        return
+    end
+
+    local velocityY =
+        root.AssemblyLinearVelocity.Y
+
+    for _, part in ipairs(Hitboxes) do
+
+        if part
+            and part.Parent then
+
+            part.CanCollide =
+                (
+                    velocityY <= 0.5
+                    and
+                    root.Position.Y >
+                    (
+                        part.Position.Y
+                        + part.Size.Y / 2
+                        - 1
+                    )
+                )
+
+        end
+
+    end
+
+end)
+
+--========================================================--
+-- TAS | SISTEMA DE MOVIMENTO DO MAKIMA SCRIPTS
+--========================================================--
+--
+-- Esta versão NÃO reproduz CFrame/teleporte por frame.
+-- O TAS grava a direção de movimento e eventos de pulo e reproduz
+-- esses comandos através do Humanoid, mantendo as animações normais.
+--
+-- Arquivos:
+--   MakimaScripts/TAS/Saved/   -> biblioteca local do usuário
+--   MakimaScripts/TAS/Exports/ -> arquivos exportados para o dispositivo
+
+local TAS_FOLDER = "MakimaScripts/TAS"
+local TAS_SAVED_FOLDER = TAS_FOLDER .. "/Saved"
+local TAS_EXPORT_FOLDER = TAS_FOLDER .. "/Exports"
+local TAS_VERSION = 3
+local TAS_RECORD_RATE = 60
+local TAS_ENABLED = false
+local TAS_RECORDING = false
+local TAS_PLAYING = false
+local TAS_STOP_REQUESTED = false
+local TAS_AUTO_WALK = true
+local TAS_CURRENT_NAME = "MeuTAS"
+local TAS_CURRENT_DATA = nil
+local TAS_RECORD = nil
+local TAS_START_MARKER = nil
+local TAS_TRAJECTORY_FOLDER = nil
+local TAS_SELECTED_NAME = nil
+local TAS_SAVED_DROPDOWN = nil
+local TAS_STATUS = nil
+local TAS_RECORD_TOGGLE = nil
+local TAS_PLAY_TOGGLE = nil
+local TAS_TOGGLE_UPDATING = false
+
+local function TASFileAPI()
+    return type(writefile) == "function"
+        and type(readfile) == "function"
+        and type(isfile) == "function"
+end
+
+local function TASNormalizeName(name)
+    name = tostring(name or "MeuTAS")
+    name = name:gsub("[^%w_%-%s]", "")
+    name = name:gsub("%s+", "_")
+    if name == "" then name = "MeuTAS" end
+    return name
+end
+
+local function TASEnsureFolders()
+    if type(makefolder) ~= "function" then return true end
+    pcall(function()
+        if type(isfolder) ~= "function" or not isfolder("MakimaScripts") then makefolder("MakimaScripts") end
+        if type(isfolder) ~= "function" or not isfolder(TAS_FOLDER) then makefolder(TAS_FOLDER) end
+        if type(isfolder) ~= "function" or not isfolder(TAS_SAVED_FOLDER) then makefolder(TAS_SAVED_FOLDER) end
+        if type(isfolder) ~= "function" or not isfolder(TAS_EXPORT_FOLDER) then makefolder(TAS_EXPORT_FOLDER) end
+    end)
+    return true
+end
+
+local function TASSavedPath(name)
+    return TAS_SAVED_FOLDER .. "/" .. TASNormalizeName(name) .. ".json"
+end
+
+local function TASExportPath(name)
+    return TAS_EXPORT_FOLDER .. "/" .. TASNormalizeName(name) .. ".json"
+end
+
+local function TASClearVisuals()
+    if TAS_TRAJECTORY_FOLDER then pcall(function() TAS_TRAJECTORY_FOLDER:Destroy() end) end
+    TAS_TRAJECTORY_FOLDER = nil
+    if TAS_START_MARKER then pcall(function() TAS_START_MARKER:Destroy() end) end
+    TAS_START_MARKER = nil
+end
+
+local function TASArrayToVector(v)
+    if type(v) ~= "table" or #v < 3 then return Vector3.zero end
+    return Vector3.new(tonumber(v[1]) or 0, tonumber(v[2]) or 0, tonumber(v[3]) or 0)
+end
+
+local function TASVectorToArray(v)
+    return {v.X, v.Y, v.Z}
+end
+
+local function TASGetCharacter()
+    local character = LocalPlayer.Character
+    if not character then return nil, nil, nil end
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    local root = character:FindFirstChild("HumanoidRootPart")
+    return character, humanoid, root
+end
+
+local function TASWaitForCharacter()
+    for _ = 1, 100 do
+        local c, h, r = TASGetCharacter()
+        if c and h and r and h.Health > 0 then return c, h, r end
+        task.wait(0.1)
+    end
+    return nil, nil, nil
+end
+
+local function TASShowStartArea(position)
+    if TAS_START_MARKER then pcall(function() TAS_START_MARKER:Destroy() end) end
+    if not position then return end
+
+    local marker = Instance.new("Part")
+    marker.Name = "MakimaTASStartArea"
+    marker.Anchored = true
+    marker.CanCollide = false
+    marker.CanTouch = false
+    marker.CanQuery = false
+    marker.Size = Vector3.new(8, 0.12, 8)
+    marker.Position = position - Vector3.new(0, 2.8, 0)
+    marker.Material = Enum.Material.Neon
+    marker.Color = Color3.fromRGB(40, 255, 100)
+    marker.Transparency = 0.42
+    marker.Parent = workspace
+
+    local box = Instance.new("SelectionBox")
+    box.Adornee = marker
+    box.Color3 = Color3.fromRGB(40, 255, 100)
+    box.LineThickness = 0.05
+    box.SurfaceTransparency = 0.55
+    box.Parent = marker
+    TAS_START_MARKER = marker
+end
+
+local function TASDrawTrajectory(samples)
+    TASClearVisuals()
+    if type(samples) ~= "table" or #samples < 2 then return end
+
+    TAS_TRAJECTORY_FOLDER = Instance.new("Folder")
+    TAS_TRAJECTORY_FOLDER.Name = "MakimaTASTrajectory"
+    TAS_TRAJECTORY_FOLDER.Parent = workspace
+
+    local lastPosition = nil
+    for i, sample in ipairs(samples) do
+        if i % 3 == 1 and sample.p then
+            local position = TASArrayToVector(sample.p)
+            if lastPosition then
+                local delta = position - lastPosition
+                local length = delta.Magnitude
+                if length > 0.05 then
+                    local line = Instance.new("Part")
+                    line.Name = "TASLine"
+                    line.Anchored = true
+                    line.CanCollide = false
+                    line.CanTouch = false
+                    line.CanQuery = false
+                    line.Material = Enum.Material.Neon
+                    line.Color = Color3.fromRGB(255, 45, 70)
+                    line.Transparency = 0.18
+                    line.Size = Vector3.new(0.10, 0.10, length)
+                    line.CFrame = CFrame.lookAt((lastPosition + position) / 2, position)
+                    line.Parent = TAS_TRAJECTORY_FOLDER
+                end
+            end
+            lastPosition = position
+        end
+    end
+
+    if samples[1] and samples[1].p then
+        TASShowStartArea(TASArrayToVector(samples[1].p))
+    end
+end
+
+local function TASEncode(data)
+    local ok, encoded = pcall(function() return HttpService:JSONEncode(data) end)
+    return ok and encoded or nil
+end
+
+local function TASDecode(raw)
+    local ok, data = pcall(function() return HttpService:JSONDecode(raw) end)
+    return ok and type(data) == "table" and data or nil
+end
+
+local function TASValidate(data)
+    if type(data) ~= "table" then return false, "Arquivo inválido." end
+    if tonumber(data.Version) ~= TAS_VERSION then return false, "Versão incompatível." end
+    if tonumber(data.PlaceId) ~= game.PlaceId then return false, "Esse TAS pertence a outro jogo." end
+    if type(data.Samples) ~= "table" or #data.Samples < 2 then return false, "O TAS não possui movimento suficiente." end
+    return true
+end
+
+local function TASBuildData(name, samples)
+    local first = samples[1]
+    return {
+        Version = TAS_VERSION,
+        Name = TASNormalizeName(name),
+        PlaceId = game.PlaceId,
+        CreatedAt = os.time(),
+        SampleRate = TAS_RECORD_RATE,
+        StartPosition = first and first.p or nil,
+        Samples = samples,
+    }
+end
+
+local function TASWrite(path, data)
+    if not TASFileAPI() then
+        Notify("TAS", "Seu ambiente não permite arquivos locais.", 5)
+        return false
+    end
+    TASEnsureFolders()
+    local encoded = TASEncode(data)
+    if not encoded then
+        Notify("TAS", "Não foi possível criar o arquivo JSON.", 5)
+        return false
+    end
+    local ok = pcall(function() writefile(path, encoded) end)
+    if not ok then
+        Notify("TAS", "Não foi possível salvar o arquivo.", 5)
+        return false
+    end
+    return true
+end
+
+local function TASRead(path)
+    if not TASFileAPI() or not isfile(path) then return nil end
+    local raw
+    local ok = pcall(function() raw = readfile(path) end)
+    if not ok or type(raw) ~= "string" then return nil end
+    local data = TASDecode(raw)
+    local valid = data and TASValidate(data)
+    if not valid then return nil end
+    return data
+end
+
+local function TASListSaved()
+    local names = {}
+    if type(listfiles) ~= "function" then return names end
+    TASEnsureFolders()
+    local ok, files = pcall(function() return listfiles(TAS_SAVED_FOLDER) end)
+    if not ok or type(files) ~= "table" then return names end
+    for _, path in ipairs(files) do
+        local name = tostring(path):match("([^/\\]+)%.json$")
+        if name then table.insert(names, name) end
+    end
+    table.sort(names)
+    return names
+end
+
+local function TASRefreshSavedList()
+    if not TAS_SAVED_DROPDOWN then return end
+    local values = TASListSaved()
+    if #values == 0 then values = {"Nenhum TAS salvo"} end
+    pcall(function() TAS_SAVED_DROPDOWN:Refresh(values) end)
+end
+
+local function TASLoadSelected()
+    if not TAS_SELECTED_NAME or TAS_SELECTED_NAME == "Nenhum TAS salvo" then return nil end
+    local data = TASRead(TASSavedPath(TAS_SELECTED_NAME))
+    if not data then
+        Notify("TAS", "Não foi possível carregar " .. tostring(TAS_SELECTED_NAME) .. ".", 4)
+        return nil
+    end
+    TAS_CURRENT_DATA = data
+    TAS_CURRENT_NAME = TASNormalizeName(data.Name or TAS_SELECTED_NAME)
+    TASDrawTrajectory(data.Samples)
+    if TASNameInput then pcall(function() TASNameInput:Set(TAS_CURRENT_NAME) end) end
+    return data
+end
+
+local function TASSetToggle(toggle, state)
+    if not toggle then return end
+    if TAS_TOGGLE_UPDATING then return end
+    TAS_TOGGLE_UPDATING = true
+    pcall(function() toggle:Set(state) end)
+    TAS_TOGGLE_UPDATING = false
+end
+
+local function TASStop()
+    TAS_STOP_REQUESTED = true
+    TAS_RECORDING = false
+    TAS_PLAYING = false
+    TASSetToggle(TAS_RECORD_TOGGLE, false)
+    TASSetToggle(TAS_PLAY_TOGGLE, false)
+    local _, humanoid = TASGetCharacter()
+    if humanoid then
+        pcall(function() humanoid:Move(Vector3.zero, false) end)
+        pcall(function() humanoid.Jump = false end)
+        pcall(function() humanoid.AutoRotate = true end)
+    end
+end
+
+local function TASStartRecording(name)
+    if not TAS_ENABLED then Notify("TAS", "Ative o TAS primeiro.", 3); return end
+    if TAS_RECORDING or TAS_PLAYING then Notify("TAS", "Pare o TAS atual primeiro.", 3); return end
+    local _, humanoid, root = TASWaitForCharacter()
+    if not humanoid or not root then Notify("TAS", "Personagem não encontrado.", 4); return end
+
+    TASClearVisuals()
+    TAS_CURRENT_NAME = TASNormalizeName(name)
+    TAS_RECORD = {started = os.clock(), accumulator = 0, samples = {}}
+    TAS_RECORDING = true
+    TAS_STOP_REQUESTED = false
+    table.insert(TAS_RECORD.samples, {
+        t = 0,
+        p = TASVectorToArray(root.Position),
+        d = TASVectorToArray(humanoid.MoveDirection),
+        j = false,
+    })
+
+    if TAS_JUMP_CONNECTION then
+        pcall(function() TAS_JUMP_CONNECTION:Disconnect() end)
+        TAS_JUMP_CONNECTION = nil
+    end
+
+    TAS_JUMP_CONNECTION = humanoid.StateChanged:Connect(function(_, newState)
+        if not TAS_RECORDING or not TAS_RECORD then return end
+        if newState == Enum.HumanoidStateType.Jumping then
+            local _, currentHumanoid, currentRoot = TASGetCharacter()
+            if currentHumanoid and currentRoot then
+                table.insert(TAS_RECORD.samples, {
+                    t = os.clock() - TAS_RECORD.started,
+                    p = TASVectorToArray(currentRoot.Position),
+                    d = TASVectorToArray(currentHumanoid.MoveDirection),
+                    j = true,
+                })
+            end
+        end
+    end)
+
+    Notify("TAS", "Gravando movimento: " .. TAS_CURRENT_NAME, 3)
+end
+
+local function TASFinishRecording()
+    if not TAS_RECORDING or not TAS_RECORD then return nil end
+    TAS_RECORDING = false
+    TASSetToggle(TAS_RECORD_TOGGLE, false)
+
+    if TAS_JUMP_CONNECTION then
+        pcall(function() TAS_JUMP_CONNECTION:Disconnect() end)
+        TAS_JUMP_CONNECTION = nil
+    end
+
+    local samples = TAS_RECORD.samples
+    TAS_RECORD = nil
+    if #samples < 2 then
+        Notify("TAS", "Movimento insuficiente.", 4)
+        return nil
+    end
+
+    TAS_CURRENT_DATA = TASBuildData(TAS_CURRENT_NAME, samples)
+    TAS_CURRENT_NAME = TASNormalizeName(TAS_CURRENT_DATA.Name)
+
+    -- Salva automaticamente assim que a gravação termina.
+    if TASWrite(TASSavedPath(TAS_CURRENT_NAME), TAS_CURRENT_DATA) then
+        TAS_SELECTED_NAME = TAS_CURRENT_NAME
+        TASRefreshSavedList()
+        pcall(function()
+            if TAS_SAVED_DROPDOWN then TAS_SAVED_DROPDOWN:Select(TAS_SELECTED_NAME) end
+        end)
+        pcall(function()
+            if TASNameInput then TASNameInput:Set(TAS_CURRENT_NAME) end
+            if TASRenameInput then TASRenameInput:Set(TAS_CURRENT_NAME) end
+        end)
+        Notify("TAS", "Gravação finalizada e salva automaticamente.", 3)
+    else
+        Notify("TAS", "Gravação finalizada, mas não foi possível salvar automaticamente.", 4)
+    end
+
+    TASDrawTrajectory(samples)
+    return TAS_CURRENT_DATA
+end
+
+local TAS_JUMP_CONNECTION = nil
+
+local function TASRecordSample()
+    if not TAS_RECORDING or not TAS_RECORD then return end
+    local _, humanoid, root = TASGetCharacter()
+    if humanoid and root then
+        table.insert(TAS_RECORD.samples, {
+            t = os.clock() - TAS_RECORD.started,
+            p = TASVectorToArray(root.Position),
+            d = TASVectorToArray(humanoid.MoveDirection),
+            j = false,
+        })
+    end
+end
+
+RunService.Heartbeat:Connect(function(dt)
+    if not TAS_RECORDING or not TAS_RECORD then return end
+    TAS_RECORD.accumulator += dt
+    local interval = 1 / TAS_RECORD_RATE
+    while TAS_RECORD.accumulator >= interval do
+        TAS_RECORD.accumulator -= interval
+        TASRecordSample()
+    end
+end)
+
+local function TASMoveToStart(position)
+    if not TAS_AUTO_WALK or not position then return true end
+    local _, humanoid, root = TASWaitForCharacter()
+    if not humanoid or not root then return false end
+    if (root.Position - position).Magnitude <= 5 then return true end
+
+    local ok, path = pcall(function()
+        local p = PathfindingService:CreatePath({AgentRadius = 2, AgentHeight = 5, AgentCanJump = true, AgentCanClimb = true, WaypointSpacing = 3})
+        p:ComputeAsync(root.Position, position)
+        return p
+    end)
+
+    if ok and path and path.Status == Enum.PathStatus.Success then
+        for _, waypoint in ipairs(path:GetWaypoints()) do
+            if TAS_STOP_REQUESTED then return false end
+            if waypoint.Action == Enum.PathWaypointAction.Jump then humanoid.Jump = true end
+            humanoid:MoveTo(waypoint.Position)
+            local reached = humanoid.MoveToFinished:Wait()
+            if not reached and (root.Position - position).Magnitude > 5 then break end
+        end
+    else
+        humanoid:MoveTo(position)
+        local deadline = os.clock() + 12
+        while os.clock() < deadline and not TAS_STOP_REQUESTED do
+            if (root.Position - position).Magnitude <= 5 then break end
+            task.wait(0.1)
+        end
+    end
+    return not TAS_STOP_REQUESTED and (root.Position - position).Magnitude <= 7
+end
+
+local function TASPlay(data)
+    if not TAS_ENABLED then Notify("TAS", "Ative o TAS primeiro.", 3); return end
+    if TAS_RECORDING or TAS_PLAYING then Notify("TAS", "Pare o TAS atual primeiro.", 3); return end
+
+    local valid, reason = TASValidate(data)
+    if not valid then Notify("TAS", reason, 4); return end
+
+    TAS_PLAYING = true
+    TAS_STOP_REQUESTED = false
+    TASDrawTrajectory(data.Samples)
+
+    task.spawn(function()
+        local startPos = TASArrayToVector(data.Samples[1].p)
+
+        if not TASMoveToStart(startPos) then
+            TAS_PLAYING = false
+            TASSetToggle(TAS_PLAY_TOGGLE, false)
+            Notify("TAS", "Não foi possível chegar ao início.", 4)
+            return
+        end
+
+        local _, humanoid, root = TASWaitForCharacter()
+        if not humanoid or not root then
+            TAS_PLAYING = false
+            TASSetToggle(TAS_PLAY_TOGGLE, false)
+            Notify("TAS", "Personagem não encontrado.", 4)
+            return
+        end
+
+        pcall(function()
+            humanoid.AutoRotate = true
+            humanoid.PlatformStand = false
+            humanoid:Move(Vector3.zero, false)
+        end)
+
+        local samples = data.Samples
+        local startClock = os.clock()
+        local sampleIndex = 1
+        local lastJumpTime = -math.huge
+        local connection
+
+        -- O controle padrão do Roblox também escreve o MoveDirection.
+        -- RenderStep em prioridade alta mantém o movimento do TAS aplicado
+        -- depois do PlayerModule, sem mover o RootPart por CFrame.
+        local bindName = "MakimaTASPlayback"
+        pcall(function() RunService:UnbindFromRenderStep(bindName) end)
+        RunService:BindToRenderStep(bindName, 201, function()
+            if TAS_STOP_REQUESTED or not TAS_PLAYING then
+                pcall(function() RunService:UnbindFromRenderStep(bindName) end)
+                return
+            end
+
+            local elapsed = os.clock() - startClock
+
+            while sampleIndex < #samples and (tonumber(samples[sampleIndex + 1].t) or 0) <= elapsed do
+                sampleIndex += 1
+            end
+
+            local current = samples[sampleIndex]
+            if not current then return end
+
+            local direction = TASArrayToVector(current.d)
+            if direction.Magnitude > 1 then direction = direction.Unit end
+
+            pcall(function()
+                humanoid:Move(direction, false)
+                humanoid.AutoRotate = true
+                humanoid.PlatformStand = false
+            end)
+
+            if current.j and (elapsed - lastJumpTime) > 0.05 then
+                pcall(function() humanoid.Jump = true end)
+                lastJumpTime = elapsed
+            end
+
+            if elapsed >= (tonumber(samples[#samples].t) or 0) then
+                pcall(function() RunService:UnbindFromRenderStep(bindName) end)
+                pcall(function()
+                    humanoid:Move(Vector3.zero, false)
+                    humanoid.Jump = false
+                    humanoid.AutoRotate = true
+                    humanoid.PlatformStand = false
+                end)
+                TAS_PLAYING = false
+                TAS_STOP_REQUESTED = false
+                TASSetToggle(TAS_PLAY_TOGGLE, false)
+                Notify("TAS", "Reprodução concluída.", 3)
+            end
+        end)
+
+        while TAS_PLAYING and not TAS_STOP_REQUESTED do
+            task.wait(0.1)
+        end
+
+        if connection then pcall(function() connection:Disconnect() end) end
+    end)
+end
+
+--========================================================--
+-- UI DO TAS
+--========================================================--
+
+local TASNameInput = nil
+local TASRenameInput = nil
+local TASControlsSection = nil
+
+local function BuildTASControls()
+    if TASControlsSection then return end
+    local ok, section = pcall(function()
+        return ParkourTab:Section({
+            Title = "TAS",
+            Desc = "Grave e reproduza movimento real do Humanoid com timing preciso.",
+            Box = true,
+            BoxBorder = true,
+            Opened = true,
+        })
+    end)
+    if not ok or not section then
+        warn("[Makima Scripts] Falha ao criar a seção TAS:", section)
+        return
+    end
+    TASControlsSection = section
+    pcall(function() TASControlsSection.ElementFrame.Visible = false end)
+
+    pcall(function()
+        TASControlsSection:Paragraph({
+            Title = "⚠ TAS em Beta",
+            Desc = "Pode não funcionar perfeitamente em todos os parkours e situações.",
+            Color = "Yellow",
+        })
+    end)
+
+    local function AddElement(method, config)
+        local success, element = pcall(function() return TASControlsSection[method](TASControlsSection, config) end)
+        if not success then warn("[Makima Scripts] Erro TAS " .. method .. ":", element); return nil end
+        return element
+    end
+
+    TASNameInput = AddElement("Input", {
+        Title = "Nome do TAS",
+        Desc = "Nome da gravação.",
+        Value = TAS_CURRENT_NAME,
+        Placeholder = "Ex.: MeuParkour",
+        InputIcon = "file-video",
+        Callback = function(value) TAS_CURRENT_NAME = TASNormalizeName(value) end,
+    })
+
+    TASRenameInput = AddElement("Input", {
+        Title = "Novo nome do TAS",
+        Desc = "Digite o novo nome antes de clicar em Renomear.",
+        Value = TAS_CURRENT_NAME,
+        Placeholder = "Ex.: EB_Torre_A",
+        InputIcon = "pencil",
+        Callback = function(value) end,
+    })
+
+    TAS_SAVED_DROPDOWN = AddElement("Dropdown", {
+        Title = "Meus TAS salvos",
+        Desc = "Selecione uma gravação salva na sua biblioteca local.",
+        Values = {"Nenhum TAS salvo"},
+        Value = "Nenhum TAS salvo",
+        SearchBarEnabled = true,
+        AllowNone = true,
+        Callback = function(option)
+            if type(option) == "string" then
+                TAS_SELECTED_NAME = option
+                TASLoadSelected()
+            end
+        end,
+    })
+
+    AddElement("Toggle", {
+        Title = "Ir até o início automaticamente",
+        Desc = "Anda normalmente até o ponto inicial antes de reproduzir.",
+        Value = TAS_AUTO_WALK,
+        Callback = function(state) TAS_AUTO_WALK = state end,
+    })
+
+    TAS_RECORD_TOGGLE = AddElement("Toggle", {
+        Title = "⏺ Gravar TAS",
+        Desc = "Ative para gravar movimento. Ao desligar, salva automaticamente na sua Hub.",
+        Value = false,
+        Callback = function(state)
+            if TAS_TOGGLE_UPDATING then return end
+            if state then
+                if TAS_PLAYING then
+                    TASSetToggle(TAS_RECORD_TOGGLE, false)
+                    Notify("TAS", "Pare a reprodução antes de gravar.", 3)
+                    return
+                end
+                TASStartRecording(TAS_CURRENT_NAME)
+                if not TAS_RECORDING then TASSetToggle(TAS_RECORD_TOGGLE, false) end
+            else
+                if TAS_RECORDING then
+                    TASFinishRecording()
+                end
+            end
+        end,
+    })
+
+    TAS_PLAY_TOGGLE = AddElement("Toggle", {
+        Title = "▶ Executar TAS",
+        Desc = "Ative para executar o TAS selecionado. Desliga sozinho ao terminar.",
+        Value = false,
+        Callback = function(state)
+            if TAS_TOGGLE_UPDATING then return end
+            if state then
+                if TAS_RECORDING then
+                    TASSetToggle(TAS_PLAY_TOGGLE, false)
+                    Notify("TAS", "Finalize a gravação antes de reproduzir.", 3)
+                    return
+                end
+                if not TAS_CURRENT_DATA and TAS_SELECTED_NAME then TASLoadSelected() end
+                if TAS_CURRENT_DATA then
+                    TASPlay(TAS_CURRENT_DATA)
+                    if not TAS_PLAYING then TASSetToggle(TAS_PLAY_TOGGLE, false) end
+                else
+                    TASSetToggle(TAS_PLAY_TOGGLE, false)
+                    Notify("TAS", "Selecione ou grave um TAS primeiro.", 4)
+                end
+            else
+                if TAS_PLAYING then
+                    TASStop()
+                    Notify("TAS", "Reprodução interrompida.", 2)
+                end
+            end
+        end,
+    })
+
+    AddElement("Button", {
+        Title = "🗑 Excluir TAS selecionado",
+        Desc = "Remove a gravação da biblioteca local.",
+        Icon = "trash-2",
+        Callback = function()
+            if not TAS_SELECTED_NAME or TAS_SELECTED_NAME == "Nenhum TAS salvo" then Notify("TAS", "Nenhum TAS selecionado.", 3); return end
+            if type(delfile) == "function" and isfile(TASSavedPath(TAS_SELECTED_NAME)) then
+                pcall(function() delfile(TASSavedPath(TAS_SELECTED_NAME)) end)
+                if TAS_CURRENT_DATA and TAS_CURRENT_DATA.Name == TAS_SELECTED_NAME then TAS_CURRENT_DATA = nil end
+                TAS_SELECTED_NAME = nil
+                TASClearVisuals()
+                TASRefreshSavedList()
+                Notify("TAS", "TAS excluído.", 3)
+            else
+                Notify("TAS", "Seu ambiente não suporta excluir arquivos.", 4)
+            end
+        end,
+    })
+
+    AddElement("Button", {
+        Title = "📥 Importar do dispositivo",
+        Desc = "Lê um JSON da pasta MakimaScripts/TAS/Exports usando o nome informado acima.",
+        Icon = "download",
+        Callback = function()
+            local name = TASNormalizeName(TAS_CURRENT_NAME)
+            local data = TASRead(TASExportPath(name))
+            if not data then Notify("TAS", "Arquivo não encontrado em Exports: " .. name .. ".json", 4); return end
+
+            TAS_CURRENT_DATA = data
+            TAS_CURRENT_NAME = TASNormalizeName(data.Name or name)
+            TAS_SELECTED_NAME = TAS_CURRENT_NAME
+
+            if TASWrite(TASSavedPath(TAS_CURRENT_NAME), TAS_CURRENT_DATA) then
+                TASRefreshSavedList()
+                pcall(function()
+                    if TAS_SAVED_DROPDOWN then TAS_SAVED_DROPDOWN:Select(TAS_SELECTED_NAME) end
+                end)
+            end
+
+            TASDrawTrajectory(data.Samples)
+            pcall(function()
+                if TASNameInput then TASNameInput:Set(TAS_CURRENT_NAME) end
+                if TASRenameInput then TASRenameInput:Set(TAS_CURRENT_NAME) end
+            end)
+            Notify("TAS", "Importado e adicionado à sua biblioteca: " .. TAS_CURRENT_NAME, 3)
+        end,
+    })
+
+    AddElement("Button", {
+        Title = "📤 Exportar para o dispositivo",
+        Desc = "Cria um arquivo JSON em MakimaScripts/TAS/Exports/.",
+        Icon = "upload",
+        Callback = function()
+            if TAS_RECORDING then TASFinishRecording() end
+            if not TAS_CURRENT_DATA then Notify("TAS", "Grave ou carregue um TAS primeiro.", 4); return end
+            local name = TASNormalizeName(TAS_CURRENT_NAME)
+            TAS_CURRENT_DATA.Name = name
+            if TASWrite(TASExportPath(name), TAS_CURRENT_DATA) then
+                Notify("TAS", "Exportado para MakimaScripts/TAS/Exports/" .. name .. ".json", 4)
+            end
+        end,
+    })
+
+    AddElement("Button", {
+        Title = "🧹 Limpar TAS atual",
+        Desc = "Remove a gravação carregada e as linhas da tela, sem apagar arquivos salvos.",
+        Icon = "eraser",
+        Callback = function()
+            TAS_CURRENT_DATA = nil
+            TASClearVisuals()
+            Notify("TAS", "TAS atual limpo.", 2)
+        end,
+    })
+
+    TASRefreshSavedList()
+end
+
+BuildTASControls()
+
+ParkourTab:Toggle({
+    Title = "Ativar TAS",
+    Desc = "Mostra os controles do sistema TAS.",
+    Value = false,
+    Callback = function(state)
+        TAS_ENABLED = state
+        if TASControlsSection and TASControlsSection.ElementFrame then
+            pcall(function() TASControlsSection.ElementFrame.Visible = state end)
+        end
+        if not state then
+            TASStop()
+            TASClearVisuals()
+            Notify("TAS", "Desativado.", 2)
+        else
+            TASRefreshSavedList()
+            if TAS_CURRENT_DATA then TASDrawTrajectory(TAS_CURRENT_DATA.Samples) end
+            Notify("TAS", "Sistema TAS ativado.", 2)
+        end
+    end,
+})
+
+--========================================================--
+-- JJS
+--========================================================--
+
+local JJSRunning = false
+local JJSAmount = 10
+local JJSInterval = 0.2
+local JJSStartedAt = 0
+local JJS_TOGGLE = nil
+local JJS_TOGGLE_UPDATING = false
+
+local function JJSFindTapButton()
+    local playerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
+    if not playerGui then
+        return nil
+    end
+
+    local best = nil
+
+    for _, object in ipairs(playerGui:GetDescendants()) do
+        if object:IsA("GuiButton") and object.Visible then
+            local text = string.lower(tostring(object.Text or ""))
+            local name = string.lower(tostring(object.Name or ""))
+
+            if text == "tap" or text:match("^%s*tap%s*$") or name == "tap" then
+                best = object
+                break
+            end
+        end
+    end
+
+    return best
+end
+
+local function JJSClickTap()
+    local button = JJSFindTapButton()
+    if not button then
+        return false
+    end
+
+    local success = pcall(function()
+        -- Activate() usa a própria interação do GuiButton e mantém
+        -- o fluxo normal do botão em vez de chamar o Add diretamente.
+        button:Activate()
+    end)
+
+    return success
+end
+
+local function JJSStart()
+    if JJSRunning then
+        Notify("Auto JJs", "O Auto JJs já está ativo.", 3)
+        return
+    end
+
+    local amount = math.floor(tonumber(JJSAmount) or 0)
+    local interval = tonumber(JJSInterval) or 0.2
+
+    if amount < 1 then
+        Notify("Auto JJs", "A quantidade precisa ser maior que 0.", 4)
+        return
+    end
+
+    if interval < 0.05 then
+        interval = 0.05
+    end
+
+    JJSRunning = true
+    JJSStartedAt = os.clock()
+
+    task.spawn(function()
+        local remoteFolder = game:GetService("ReplicatedStorage"):FindFirstChild("Remotes")
+        local polichinelos = remoteFolder and remoteFolder:FindFirstChild("Polichinelos")
+
+        if polichinelos and polichinelos:IsA("RemoteEvent") then
+            pcall(function()
+                polichinelos:FireServer("Prepare")
+                polichinelos:FireServer("Start")
+            end)
+        end
+
+        local completed = 0
+        local deadline = os.clock() + math.max(10, amount * interval + 10)
+
+        while JJSRunning and completed < amount do
+            if os.clock() > deadline then
+                Notify("Auto JJs", "Tempo limite atingido.", 4)
+                break
+            end
+
+            local clicked = JJSClickTap()
+
+            if clicked then
+                completed += 1
+            end
+
+            if completed < amount then
+                task.wait(interval)
+            end
+        end
+
+        local elapsed = os.clock() - JJSStartedAt
+        JJSRunning = false
+
+        if JJS_TOGGLE and not JJS_TOGGLE_UPDATING then
+            JJS_TOGGLE_UPDATING = true
+            pcall(function() JJS_TOGGLE:Set(false) end)
+            JJS_TOGGLE_UPDATING = false
+        end
+
+        Notify(
+            "Auto JJs",
+            string.format("Finalizado: %d/%d JJs em %.2fs.", completed, amount, elapsed),
+            4
+        )
+    end)
+end
+
+JJsTab:Paragraph({
+    Title = "Auto JJs",
+    Desc = "Automatiza os polichinelos usando o próprio botão TAP da interface.",
+    Color = "Red",
+})
+
+JJsTab:Input({
+    Title = "Quantidade de JJs",
+    Desc = "Quantidade de vezes que o TAP será acionado.",
+    Value = "10",
+    Placeholder = "Ex.: 10",
+    InputIcon = "hash",
+    Callback = function(value)
+        local number = tonumber(value)
+        if number then
+            JJSAmount = math.max(1, math.floor(number))
+        end
+    end,
+})
+
+JJsTab:Input({
+    Title = "Intervalo",
+    Desc = "Tempo entre cada TAP. Exemplo: 0.2 segundos.",
+    Value = "0.2",
+    Placeholder = "Ex.: 0.2",
+    InputIcon = "timer",
+    Callback = function(value)
+        local number = tonumber(value)
+        if number then
+            JJSInterval = math.max(0.05, number)
+        end
+    end,
+})
+
+JJS_TOGGLE = JJsTab:Toggle({
+    Title = "Auto JJs",
+    Desc = "Procura o botão TAP onde ele estiver na tela e executa a quantidade definida.",
+    Value = false,
+    Callback = function(state)
+        if JJS_TOGGLE_UPDATING then return end
+        if state then
+            JJSStart()
+        else
+            JJSRunning = false
+            Notify("Auto JJs", "Interrompido.", 2)
+        end
+    end,
+})
+
+--========================================================--
+-- FARM
+--========================================================--
+
+local Lixos = {
+
+    Vector3.new(-393, 3, -872),
+    Vector3.new(-389, 3, -1069),
+    Vector3.new(-420, 3, -968),
+    Vector3.new(-56, 3, -1134),
+    Vector3.new(-154, 3, -1162),
+    Vector3.new(113, 3, -1162),
+    Vector3.new(204, 3, -1135),
+    Vector3.new(225, 3, -974),
+    Vector3.new(-52, 3, -895),
+    Vector3.new(-32, 3, -974),
+    Vector3.new(318, 3, -687),
+    Vector3.new(139, 3, -691),
+    Vector3.new(64, 3, -717),
+    Vector3.new(469, 3, -880),
+    Vector3.new(436, 3, -742),
+
+}
+
+local Lixeira =
+    Vector3.new(
+        -394.31,
+        3.04,
+        -779.87
+    )
+
+local Foice =
+    Vector3.new(-91, 3, -512)
+
+local Gramas = {
+
+    Vector3.new(-199, 3, -520),
+    Vector3.new(-241, 3, -659),
+    Vector3.new(-377, 3, -773),
+    Vector3.new(9, 3, -745),
+    Vector3.new(-69, 3, -735),
+    Vector3.new(-134, 3, -672),
+    Vector3.new(-41, 3, -668),
+    Vector3.new(-22, 3, -565),
+    Vector3.new(-12, 3, -925),
+    Vector3.new(45, 3, -886),
+    Vector3.new(54, 3, -776),
+    Vector3.new(-289, 3, -1113),
+    Vector3.new(-204, 3, -1019),
+    Vector3.new(-145, 3, -1095),
+    Vector3.new(-95, 3, -1030),
+    Vector3.new(-13, 3, -995),
+    Vector3.new(-328, 3, -987),
+    Vector3.new(-367, 3, -1110),
+
+}
+
+local CaixaPega =
+    Vector3.new(
+        77.48,
+        3.04,
+        -429.99
+    )
+
+local CaixaEntrega =
+    Vector3.new(
+        440.87,
+        3.85,
+        -224.70
+    )
+
+local AutoLixo = false
+local AutoGrama = false
+local AutoCaixa = false
+
+local function TeleportTo(position)
+
+    local character =
+        LocalPlayer.Character
+
+    local root =
+        character
+        and character:FindFirstChild(
+            "HumanoidRootPart"
+        )
+
+    if not root then
+        return
+    end
+
+    root.CFrame =
+        CFrame.new(
+            position
+            + Vector3.new(
+                0,
+                3,
+                0
+            )
+        )
+end
+
+local function FireNearbyPrompts()
+
+    local character =
+        LocalPlayer.Character
+
+    local root =
+        character
+        and character:FindFirstChild(
+            "HumanoidRootPart"
+        )
+
+    if not root then
+        return
+    end
+
+    if type(fireproximityprompt) ~= "function" then
+
+        return
+    end
+
+    for _, object in ipairs(
+        workspace:GetDescendants()
+    ) do
+
+        if object:IsA("ProximityPrompt")
+            and object.Enabled then
+
+            local parent = object.Parent
+
+            if parent
+                and parent:IsA("BasePart") then
+
+                local distance =
+                    (
+                        parent.Position
+                        - root.Position
+                    ).Magnitude
+
+                if distance <= 15 then
+
+                    pcall(function()
+
+                        fireproximityprompt(
+                            object
+                        )
+
+                    end)
+
+                end
+
+            end
+
+        end
+
+    end
+end
+
+local function StartAutoLixo()
+
+    task.spawn(function()
+
+        while AutoLixo do
+
+            for _, position in ipairs(Lixos) do
+
+                if not AutoLixo then
+                    break
+                end
+
+                TeleportTo(position)
+
+                task.wait(1)
+
+                FireNearbyPrompts()
+
+                task.wait(1)
+
+                TeleportTo(Lixeira)
+
+                task.wait(1)
+
+                FireNearbyPrompts()
+
+                task.wait(1)
+
+            end
+
+        end
+
+    end)
+end
+
+local function StartAutoGrama()
+
+    task.spawn(function()
+
+        TeleportTo(Foice)
+
+        task.wait(1)
+
+        FireNearbyPrompts()
+
+        task.wait(1)
+
+        while AutoGrama do
+
+            for _, position in ipairs(Gramas) do
+
+                if not AutoGrama then
+                    break
+                end
+
+                TeleportTo(position)
+
+                task.wait(1)
+
+                FireNearbyPrompts()
+
+                task.wait(1)
+
+            end
+
+        end
+
+    end)
+end
+
+local function StartAutoCaixa()
+
+    task.spawn(function()
+
+        while AutoCaixa do
+
+            TeleportTo(CaixaPega)
+
+            task.wait(1)
+
+            FireNearbyPrompts()
+
+            task.wait(1)
+
+            TeleportTo(CaixaEntrega)
+
+            task.wait(1)
+
+            FireNearbyPrompts()
+
+            task.wait(2)
+
+        end
+
+    end)
+end
+
+FarmTab:Paragraph({
+
+    Title = "Farms Automáticos",
+
+    Desc =
+        "Farms disponíveis no hub.",
+
+    Color = "Red",
+})
+
+FarmTab:Toggle({
+
+    Title = "Auto Lixo",
+
+    Desc =
+        "Coleta lixo automaticamente.",
+
+    Value = false,
+
+    Callback = function(state)
+
+        AutoLixo = state
+
+        if state then
+            StartAutoLixo()
+        end
+
+    end,
+})
+
+FarmTab:Toggle({
+
+    Title = "Auto Grama",
+
+    Desc =
+        "Corta grama automaticamente.",
+
+    Value = false,
+
+    Callback = function(state)
+
+        AutoGrama = state
+
+        if state then
+            StartAutoGrama()
+        end
+
+    end,
+})
+
+FarmTab:Toggle({
+
+    Title = "Auto Caixa",
+
+    Desc =
+        "Transporta caixas automaticamente.",
+
+    Value = false,
+
+    Callback = function(state)
+
+        AutoCaixa = state
+
+        if state then
+            StartAutoCaixa()
+        end
+
+    end,
+})
+
+--========================================================--
+-- PATCH
+--========================================================--
+
+PatchTab:Paragraph({
+    Title = "Atualizações",
+    Desc = "Novidades e correções recentes do Makima Scripts.",
+    Color = "Red",
+})
+
+PatchTab:Paragraph({
+    Title = "Versão atual",
+    Desc = "Atualização de Farms + TAS em Beta.",
+})
+
+PatchTab:Paragraph({
+    Title = "Novidades",
+    Desc =
+        "• Novos locais adicionados para a Farm de Lixo.\n"
+        .. "• O ponto da lixeira foi mantido.\n"
+        .. "• Novos locais adicionados para a Farm da Foice.\n"
+        .. "• Novo ponto inicial para pegar a foice.\n"
+        .. "• Aviso de Beta adicionado ao sistema TAS.\n"
+        .. "• Melhorias gerais na organização das Farms.",
+})
+
+PatchTab:Paragraph({
+    Title = "Correções",
+    Desc =
+        "• Atualizados os pontos usados pelas Farms de Lixo e Foice.\n"
+        .. "• Ajustes gerais de estabilidade e interface.\n"
+        .. "• O TAS permanece em Beta e pode apresentar falhas em alguns percursos.",
+})
+
+--========================================================--
+-- OUTROS
+--========================================================--
+
+OutrosTab:Paragraph({
+
+    Title = "Outros",
+
+    Desc =
+        "Funções adicionais da Hub.",
+
+    Color = "Red",
+})
+
+OutrosTab:Button({
+
+    Title = "Liberar Chat",
+
+    Desc =
+        "Reativa o Chat do Roblox.",
+
+    Callback = function()
+
+        pcall(function()
+
+            StarterGui:SetCoreGuiEnabled(
+                Enum.CoreGuiType.Chat,
+                true
+            )
+
+        end)
+
+        pcall(function()
+
+            StarterGui:SetCore(
+                "ChatActive",
+                true
+            )
+
+        end)
+
+        pcall(function()
+
+            TextChatService
+                .ChatWindowConfiguration
+                .Enabled = true
+
+        end)
+
+        pcall(function()
+
+            TextChatService
+                .ChatInputBarConfiguration
+                .Enabled = true
+
+        end)
+
+        Notify(
+            "Chat",
+            "Comando executado.",
+            3
+        )
+
+    end,
+})
+
+OutrosTab:Button({
+
+    Title = "Copiar Link da Key",
+
+    Desc =
+        "Copia o link para obter sua Key.",
+
+    Callback = function()
+
+        local link = GetPandaKeyLink()
+        if link then
+            Copy(link)
+        else
+            Notify("Panda Auth", "Não foi possível obter o link da Key.", 4)
+        end
+
+    end,
+})
+
+OutrosTab:Button({
+
+    Title = "Copiar Discord",
+
+    Desc =
+        "Copia o convite do Discord.",
+
+    Callback = function()
+
+        Copy(DISCORD_URL)
+
+    end,
+})
+
+--========================================================--
+-- CRÉDITOS
+--========================================================--
+
+CreditosTab:Paragraph({
+
+    Title = "Makima Scripts",
+
+    Desc =
+        "Hub desenvolvida por MakimaDev.",
+
+    Color = "Red",
+})
+
+CreditosTab:Paragraph({
+
+    Title = "Criador",
+
+    Desc =
+        "MakimaDev",
+
+    Color = "Red",
+})
+
+CreditosTab:Button({
+
+    Title = "Discord",
+
+    Desc =
+        "discord.gg/4aEBbw7BQf",
+
+    Callback = function()
+
+        Copy(DISCORD_URL)
+
+    end,
+})
+
+--========================================================--
+-- FINAL
+--========================================================--
+
+Notify(
+    "Makima Scripts",
+    "Hub carregada.",
+    3
+)
+
+print(
+    "[Makima Scripts] Carregada."
+)
