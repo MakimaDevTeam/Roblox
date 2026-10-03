@@ -508,47 +508,88 @@ local function ClearHitboxes()
     table.clear(Hitboxes)
 end
 
+local PARKOUR_REPLACEMENTS = {
+    {old = Vector3.new(172.900, 53.260, -898.460), new = Vector3.new(172.900, 53.260, -897.660)},
+    {old = Vector3.new(166.030, 5.040, -661.620), new = Vector3.new(165.030, 5.040, -661.620)},
+    {old = Vector3.new(165.390, 14.260, -661.390), new = Vector3.new(165.390, 13.260, -661.390)},
+    {old = Vector3.new(164.110, 21.280, -661.680), new = Vector3.new(165.110, 21.280, -661.680)},
+    {old = Vector3.new(167.300, 29.290, -661.720), new = Vector3.new(165.300, 29.290, -661.720)},
+    {old = Vector3.new(164.080, 37.360, -661.760), new = Vector3.new(164.880, 37.360, -661.760)},
+    {old = Vector3.new(174.880, 37.360, -652.160), new = Vector3.new(175.680, 37.360, -652.160)},
+    {old = Vector3.new(201.500, 53.330, -896.480), new = Vector3.new(200.700, 53.330, -896.480)},
+    {old = Vector3.new(211.300, 53.330, -896.250), new = Vector3.new(211.300, 53.330, -896.250)},
+    {old = Vector3.new(221.920, 53.330, -896.650), new = Vector3.new(221.920, 53.330, -896.650)},
+    {old = Vector3.new(233.210, 53.330, -896.220), new = Vector3.new(232.410, 53.330, -896.220)},
+    {old = Vector3.new(393.870, 5.270, -892.930), new = Vector3.new(393.870, 4.470, -892.930)},
+    {old = Vector3.new(362.030, 11.530, -901.740), new = Vector3.new(362.030, 11.530, -902.540)},
+    {old = Vector3.new(352.360, 11.530, -893.950), new = Vector3.new(352.360, 11.530, -893.150)},
+    {old = Vector3.new(352.270, 11.530, -903.210), new = Vector3.new(352.270, 11.530, -903.210)},
+    {old = Vector3.new(310.710, 11.530, -898.950), new = Vector3.new(310.710, 11.530, -898.150)},
+    {old = Vector3.new(217.920, 12.700, -848.280), new = Vector3.new(217.920, 13.500, -848.280)},
+    {old = Vector3.new(217.990, 12.840, -863.620), new = Vector3.new(217.990, 13.640, -863.620)},
+}
+
 local function GetHitboxData()
-
     local source = SafeHttpGet(PARKOUR_URL)
+    if not source then return nil end
 
-    if not source then
-        return nil
-    end
-
-    local tableText =
-        source:match(
-            "local hitboxData%s*=%s*(%b{})"
-        )
-
+    local tableText = source:match("local hitboxData%s*=%s*(%b{})")
     if not tableText then
-
-        warn(
-            "[Makima Scripts] hitboxData não encontrada."
-        )
-
+        warn("[Makima Scripts] hitboxData não encontrada.")
         return nil
     end
 
     local success, data = pcall(function()
-
-        local fn = loadstring(
-            "return " .. tableText
-        )
-
-        if not fn then
-            error("Não foi possível interpretar hitboxData.")
-        end
-
+        local fn = loadstring("return " .. tableText)
+        if not fn then error("Não foi possível interpretar hitboxData.") end
         return fn()
-
     end)
 
-    if success and type(data) == "table" then
-        return data
+    if not success or type(data) ~= "table" then return nil end
+
+    -- Remove os pontos antigos e recria/substitui pelos novos.
+    -- O tamanho do ponto antigo é preservado quando ele é encontrado.
+    local result = {}
+    local usedOld = {}
+    local tolerance = 0.05
+
+    for index, entry in ipairs(data) do
+        local pos = type(entry) == "table" and entry.pos
+        local replacementIndex = nil
+
+        if typeof(pos) == "Vector3" then
+            for i, replacement in ipairs(PARKOUR_REPLACEMENTS) do
+                if (pos - replacement.old).Magnitude <= tolerance then
+                    replacementIndex = i
+                    break
+                end
+            end
+        end
+
+        if not replacementIndex then
+            table.insert(result, entry)
+        else
+            -- Guarda o tamanho para usar no novo auxiliar.
+            if not usedOld[replacementIndex] then
+                usedOld[replacementIndex] = {
+                    size = entry.size,
+                }
+            end
+        end
     end
 
-    return nil
+    -- Cria cada novo ponto exatamente nas coordenadas fornecidas.
+    -- Se o antigo foi encontrado, mantém o tamanho dele; caso contrário,
+    -- usa um tamanho padrão de auxiliar.
+    for i, replacement in ipairs(PARKOUR_REPLACEMENTS) do
+        local oldInfo = usedOld[i]
+        table.insert(result, {
+            pos = replacement.new,
+            size = oldInfo and oldInfo.size or Vector3.new(8, 1, 8),
+        })
+    end
+
+    return result
 end
 
 local function CreateHitboxes()
